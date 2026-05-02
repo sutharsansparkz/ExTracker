@@ -1,0 +1,78 @@
+name: Android Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'App.tsx'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'babel.config.js'
+      - 'metro.config.js'
+      - 'tsconfig.json'
+      - '.github/workflows/android-release.yml'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 || 'dev-keystore-base64-placeholder' }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'dev-password' }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'dev-alias' }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'dev-key-password' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare release keystore
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          mkdir -p android/app
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-upload.keystore
+
+      - name: Build release bundle and APK
+        run: |
+          test -n "$MYAPP_UPLOAD_STORE_PASSWORD"
+          test -n "$MYAPP_UPLOAD_KEY_ALIAS"
+          test -n "$MYAPP_UPLOAD_KEY_PASSWORD"
+          cd android
+          ./gradlew clean bundleRelease assembleRelease \
+            -PMYAPP_UPLOAD_STORE_FILE=$MYAPP_UPLOAD_STORE_FILE \
+            -PMYAPP_UPLOAD_STORE_PASSWORD=$MYAPP_UPLOAD_STORE_PASSWORD \
+            -PMYAPP_UPLOAD_KEY_ALIAS=$MYAPP_UPLOAD_KEY_ALIAS \
+            -PMYAPP_UPLOAD_KEY_PASSWORD=$MYAPP_UPLOAD_KEY_PASSWORD
+        env:
+          MYAPP_UPLOAD_STORE_FILE: release-upload.keystore
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ env.ANDROID_KEYSTORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ env.ANDROID_KEY_ALIAS }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ env.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-artifacts
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk
