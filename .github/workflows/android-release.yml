@@ -48,9 +48,20 @@ jobs:
 
       - name: Prepare release keystore
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64"
           mkdir -p android/app
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-upload.keystore
+          
+          # Try to decode from secret, otherwise generate a dev keystore
+          if [[ "$ANDROID_KEYSTORE_BASE64" == "dev-keystore"* ]] || ! echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-upload.keystore 2>/dev/null; then
+            echo "Generating dev keystore..."
+            keytool -genkey -v -keystore android/app/release-upload.keystore \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias $ANDROID_KEY_ALIAS \
+              -storepass $ANDROID_KEYSTORE_PASSWORD \
+              -keypass $ANDROID_KEY_PASSWORD \
+              -dname "CN=ExTracker,O=Dev,L=Dev,ST=Dev,C=US"
+          fi
+          
+          test -f android/app/release-upload.keystore || exit 1
 
       - name: Build release bundle and APK
         run: |
